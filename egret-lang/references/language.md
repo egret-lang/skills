@@ -10,6 +10,105 @@ For formatting, naming, module boundaries, comments, and repository-level code
 style, load `references/coding-style.md`. This file focuses on language syntax
 and semantic patterns.
 
+## Complete Stable Syntax Checklist
+
+This checklist is the minimum grammar surface an AI agent must remember before
+claiming it knows Egret-lang syntax.
+
+Lexical and literals:
+
+- UTF-8 source files.
+- Line comments `// ...`.
+- Block comments `/* ... */`.
+- AI block comments `@AI ... @END`.
+- Identifiers: ASCII letter or `_`, followed by ASCII letters, digits, or `_`.
+- Integer literals: decimal, binary `0b...`, octal `0o...`, hexadecimal
+  `0x...`.
+- Floating literals with a decimal point.
+- String literals `"..."`.
+- C string literals `c"..."`.
+- Escapes: `\\`, `\"`, `\0`, `\n`, `\r`, `\t`, `\xHH`.
+- Bool and nil literals: `true`, `false`, `nil`.
+
+Program structure:
+
+- Optional `module pkg.sub;`.
+- `use module.path;`.
+- `use module.path as alias;`.
+- Qualified names through `.` in module paths and through `::` in source
+  qualified identifiers.
+
+Declarations:
+
+- `func name(params) -> Type { ... }`.
+- `async func name(params) -> Type { ... }`.
+- `extern func name(params) -> Type;`.
+- `extern async func name(params) -> Type;`.
+- `builtin func name(params) -> Type;` for runtime/compiler builtins.
+- `const NAME: Type = expr;`.
+- `type Name = Type;`.
+- `enum Name { A, B = 2, internal C = -1 }`.
+- `class Name { ... }`.
+- `class Child : Base { ... }`.
+- `norm Name<T> { ... }`.
+- `norm impl Name<Type> { ... }`.
+- `internal` may prefix supported top-level declarations, fields, methods, norm
+  signatures, and enum variants.
+
+Types:
+
+- Builtins: `Int`, `UInt`, `Int64`, `Int32`, `Int16`, `Int8`, `UInt64`,
+  `UInt32`, `UInt16`, `UInt8`, `Bool`, `Float`, `Float32`, `Float64`,
+  `String`, `CString`, `Void`, `Ptr`, `Any`, `ErrCode`.
+- Runtime-backed: class types, `Future(T)`, `Future(T, ErrCode)`, `Lazy(T)`.
+- Optional types: `T?`.
+- Immutable view types: `immut T`.
+- Function types: `(A, B) -> R`.
+- Generic class types: `Name<T, 42, "key", true>`.
+
+Statements:
+
+- Block `{ ... }`.
+- `let` and `var` local declarations, with or without explicit type.
+- Pair local declaration: `let value: T, err: ErrCode = expr;`.
+- Assignment `lhs = expr;`.
+- Pair assignment `a, b = expr;`.
+- Compound assignment `lhs += expr;`, `lhs -= expr;`.
+- `if` / `else if` / `else`.
+- `loop condition { ... }`.
+- `loop (init; cond; step) { ... }`.
+- `break;`.
+- `skip;`.
+- `return;`, `return expr;`, `return value, err;`.
+- `defer expr;`.
+- `dispose expr;`.
+- Match statement.
+- Expression statement.
+
+Expressions:
+
+- Literals and identifiers.
+- Unary `-`, `!`, `~`, `&`.
+- Binary arithmetic, shift, comparison, equality, bitwise, logical operators.
+- Ternary `cond ? then_expr : else_expr`.
+- Function/method calls.
+- Generic call type arguments: `fn<T>(arg)`.
+- Argument spreading: `fn(xs...)`.
+- Field/member access: `obj.field`.
+- Norm member access form: `Norm<T>.method` through parser-supported generic
+  member syntax.
+- Casts: `expr => Type`, `expr =>? Type`.
+- Type test: `expr is Type`.
+- Error propagation: `expr?`.
+- `new Type(args...)`.
+- Lambda `|params| -> Type { ... }`.
+- `match expr { pattern => expr, ... }`.
+- Field initializer expression: `Type { field: value, ... }`.
+- `super`, `super.method(...)`, `super.init(...)`, `super<Base>.method(...)`.
+- Async expressions: `await expr`, `spawn expr`, `join expr`.
+- Lazy expressions: `lazy expr`, `force(expr)`.
+- Infinite/range stream sugar: `[start, step, ...]` and `[start ...]`.
+
 ## File Shape
 
 ```egret
@@ -32,6 +131,74 @@ func main(argc: Int, argv: Int) -> Int {
 before ordinary declarations. Use dot-separated module paths such as
 `net.tcp`.
 
+`::` is accepted for source qualified identifiers in expression/type contexts,
+while module paths use dots:
+
+```egret
+use collections;
+
+let v: collections::Vector<Int> = new collections.Vector<Int>();
+```
+
+## Lexical Grammar
+
+Source files are UTF-8 text. The portable syntax surface uses ASCII
+punctuation, keywords, and identifiers. Non-ASCII data is safe inside string
+literals as UTF-8 bytes.
+
+Comments:
+
+```egret
+// line comment
+
+/*
+block comment
+*/
+
+@AI
+agent metadata block
+@END
+```
+
+Identifiers:
+
+```text
+[A-Za-z_][A-Za-z0-9_]*
+```
+
+Reserved words cannot be used as ordinary identifiers unless the grammar has a
+special escape for a specific context. Some keyword-looking names such as
+`match`, `dispose`, `spawn`, and `join` are accepted in selected identifier
+positions by the parser; avoid relying on that for public APIs.
+
+Literal forms:
+
+```egret
+let dec: Int = 123;
+let bin: Int = 0b1010;
+let oct: Int = 0o755;
+let hex: Int = 0x2a;
+let f: Float = 3.14;
+let s: String = "line\n";
+let c: CString = c"native\0";
+let ok: Bool = true;
+let no: Bool = false;
+let maybe: String? = nil;
+```
+
+Stable string escapes are `\\`, `\"`, `\0`, `\n`, `\r`, `\t`, and `\xHH`.
+C string literals must not contain embedded NUL after escape processing except
+where the C string rule explicitly permits the terminator.
+
+Reserved keyword groups:
+
+```text
+declarations/modules: func const internal extern class type enum norm impl module use as
+values/control/objects: var let if else loop break skip return dispose new super immut match is defer true false nil
+async: async await spawn join
+lazy: lazy force
+```
+
 ## Main Functions
 
 ```egret
@@ -51,19 +218,29 @@ async func main(argc: Int, argv: Int) -> Int {
 }
 ```
 
+The parser accepts functions and methods without an explicit `-> Type`, but new
+code should prefer explicit return types unless matching nearby code:
+
+```egret
+func log_ok() {
+    print("ok");
+}
+```
+
 ## Types
 
 Common types:
 
 ```text
-Int Int8 Int16 Int32 Int64
+Int UInt Int8 Int16 Int32 Int64
 UInt8 UInt16 UInt32 UInt64
-Float Float64
-Bool String CString Void Ptr Any
+Float Float32 Float64
+Bool String CString Void Ptr Any ErrCode
 T?
 immut T
 Lazy(T)
 Future(T)
+Future(T, ErrCode)
 (Int, String) -> Bool
 ```
 
@@ -91,6 +268,29 @@ if any_value is Int {
 }
 ```
 
+Optional values:
+
+```egret
+class Node {
+    var next: Node?;
+}
+
+let maybe_node: Node? = nil;
+```
+
+Lazy values:
+
+```egret
+func expensive() -> Int {
+    return 42;
+}
+
+func demo() -> Int {
+    let value: Lazy(Int) = lazy expensive();
+    return force(value);
+}
+```
+
 ## Declarations
 
 ```egret
@@ -101,8 +301,8 @@ type UserId = Int;
 
 enum Color {
     Red,
-    Green,
-    Blue,
+    Green = 2,
+    internal Blue,
 }
 
 func add(a: Int, b: Int = 1) -> Int {
@@ -114,10 +314,45 @@ async func load() -> String, ErrCode {
 }
 
 extern func c_strlen(s: CString) -> Int;
+extern async func c_async_load() -> Int, ErrCode;
 ```
 
 Default parameters must be trailing. Variadic parameters are stable only in the
 trailing position.
+
+`internal` can prefix top-level declarations, constants, classes, type aliases,
+enums, enum variants, fields, methods, Norms, Norm signatures, and Norm impl
+methods where the grammar allows it.
+
+Variadic and spread examples:
+
+```egret
+func join_all(prefix: String, parts: ...String) -> String {
+    return prefix;
+}
+
+func call_join(xs: collections.Vector<String>) -> String {
+    return join_all("p:", xs...);
+}
+```
+
+`builtin func` exists for runtime/compiler builtins. Production code should not
+invent builtins; use it only when extending the compiler/runtime surface.
+
+```egret
+builtin func dispose_safepoint() -> Void;
+```
+
+Declaration syntax forms:
+
+```text
+internal func name(params) -> Type { ... }
+async func name(params) -> Type { ... }
+internal async func name(params) -> Type { ... }
+extern func name(params) -> Type;
+extern async func name(params) -> Type;
+internal builtin func name(params) -> Type;
+```
 
 ## Control Flow
 
@@ -174,6 +409,19 @@ match code {
 }
 ```
 
+Match expression:
+
+```egret
+let name: String = match code {
+    0 => "zero",
+    1 => "one",
+    _ => "other",
+};
+```
+
+Stable match patterns are integer literals, string literals, `true`, `false`,
+and `_` default.
+
 Defer and dispose:
 
 ```egret
@@ -181,12 +429,31 @@ defer cleanup();
 dispose obj;
 ```
 
+`defer expr;` runs cleanup when leaving the current function/scope path.
+`dispose expr;` lowers to `expr.dispose()` plus a dispose safepoint. Resource
+`dispose` methods should be idempotent.
+
+Local declarations and assignment forms:
+
+```egret
+let a: Int = 1;
+let b = 2;
+let c: Int;
+var d: String = "mutable";
+let value: String, err: ErrCode = load();
+value, err = reload();
+target.field = 10;
+target.field += 1;
+target.field -= 1;
+```
+
 ## Operators
 
 Stable precedence from high to low:
 
 1. Postfix calls, field access, indexing.
-2. Unary `!`, unary `-`.
+2. Unary `!`, unary `-`, unary `~`, address-of `&`, `lazy`, `await`, `spawn`,
+   `join`.
 3. `*`, `/`, `%`.
 4. `+`, `-`.
 5. `<<`, `>>`.
@@ -195,6 +462,34 @@ Stable precedence from high to low:
 8. Bitwise `&`, `^`, `|`.
 9. Logical `&&`, `||`.
 10. Ternary `?:`.
+
+Postfix operators:
+
+```egret
+let a: Int = obj.field;
+let b: Int = fn<Int>(10);
+let c: Rect = shape => Rect;
+let maybe: Rect? = shape =>? Rect;
+let ok: Bool = shape is Rect;
+let value: String = read_text(path)?;
+```
+
+`expr?` propagates the `ErrCode` from a `T, ErrCode` expression. Use `_ = expr?;`
+when intentionally discarding the successful value.
+
+Object construction and field initialization:
+
+```egret
+let p: Point = new Point(1, 2);
+let q: Point = Point { x: 1, y: 2 };
+```
+
+The grammar supports range/stream sugar in expression position:
+
+```egret
+let stream1 = [1, 2, ...];
+let stream2 = [10 ...];
+```
 
 ## Lambdas
 
@@ -211,7 +506,7 @@ target compiler version.
 
 ```egret
 class Counter {
-    var value: Int;
+    internal var value: Int = 0;
 
     func init(self: Counter, value: Int = 0) -> Void {
         self.value = value;
@@ -259,6 +554,55 @@ class A<T> : Base {
 }
 ```
 
+`super`:
+
+```egret
+class Animal {
+    var name: String;
+
+    func init(self: Animal, name: String) -> Void {
+        self.name = name;
+    }
+
+    func speak(self: Animal) -> String {
+        return "unknown";
+    }
+}
+
+class Dog : Animal {
+    func init(self: Dog, name: String) -> Void {
+        super.init(name);
+    }
+
+    func speak(self: Dog) -> String {
+        return super<Animal>.speak() + ": woof";
+    }
+}
+```
+
+Rules:
+
+- Egret uses single inheritance.
+- `super.init(...)` is for derived-class construction and must be placed where
+  constructor rules allow it; current diagnostics require it as the first
+  statement for derived class initialization when needed.
+- `super.method(...)` calls the immediate base implementation.
+- `super<Base>.method(...)` selects an explicit base owner and must name a valid
+  base class.
+
+Field initializer expression:
+
+```egret
+class Point {
+    var x: Int;
+    var y: Int;
+}
+
+func origin() -> Point {
+    return Point { x: 0, y: 0 };
+}
+```
+
 Lifecycle:
 
 ```egret
@@ -299,12 +643,66 @@ func addN<N>(x: Int) -> Int {
 }
 ```
 
+Norm-constrained type parameters:
+
+```egret
+func keep_hashable<T: collections.Hashable>(value: T) -> T {
+    return value;
+}
+```
+
+Generic method:
+
+```egret
+class Converter {
+    func id<T>(self: Converter, value: T) -> T {
+        return value;
+    }
+}
+```
+
+Class specialization:
+
+```egret
+class Cache<T> {
+    var value: T;
+}
+
+class Cache<String> {
+    var value: String;
+
+    func len(self: Cache<String>) -> Int {
+        return std.len(self.value);
+    }
+}
+```
+
 Rules:
 
 - Type parameters and value parameters share `<...>`.
 - Defaults must be trailing.
 - Value generic arguments must be compile-time constants.
+- Value generic arguments can be integers, floats, strings, booleans, or named
+  constants accepted by the compiler.
+- Type parameters can have Norm constraints: `<T: NormName>`.
 - Provide explicit type arguments for ambiguous calls.
+
+Generic argument grammar accepts both type arguments and value arguments:
+
+```egret
+class Field<Name, Required> {
+    var label: String;
+    var required: Bool;
+}
+
+let f: Field<"email", true> = new Field<"email", true>();
+```
+
+Generic call syntax uses parser-disambiguated type arguments before the call:
+
+```egret
+let x: Int = id<Int>(42);
+```
 
 ## Norms
 
@@ -320,6 +718,20 @@ class User {
 norm impl Printable<User> {
     func format(x: User) -> String {
         return x.name;
+    }
+}
+```
+
+Async Norm signatures and implementations must match async-ness:
+
+```egret
+norm AsyncRead<T> {
+    async func read(path_text: String) -> T, ErrCode;
+}
+
+norm impl AsyncRead<String> {
+    async func read(path_text: String) -> String, ErrCode {
+        return "", std.OK;
     }
 }
 ```
@@ -341,6 +753,20 @@ norm impl collections.Hashable<MyKey> {
 
     func eq(a: MyKey, b: MyKey) -> Bool {
         return a.a == b.a && a.b == b.b;
+    }
+}
+```
+
+Norm impl syntax supports multiple target types for Norms that require them:
+
+```egret
+norm PairNorm<A, B> {
+    func combine(a: A, b: B) -> String;
+}
+
+norm impl PairNorm<Int, String> {
+    func combine(a: Int, b: String) -> String {
+        return b;
     }
 }
 ```
@@ -389,6 +815,32 @@ async func main() -> Int {
 }
 ```
 
+Error propagation with `?`:
+
+```egret
+use fs;
+use std;
+
+func load_config(path_text: String) -> String, ErrCode {
+    let text: String = fs.file_read_text_result(path_text)?;
+    return text, std.OK;
+}
+
+func ensure(path_text: String) -> ErrCode {
+    _ = fs.ensure_dir(path_text)?;
+    return std.OK;
+}
+```
+
+Rules:
+
+- `expr?` expects an expression returning `T, ErrCode` or compatible error
+  shape.
+- If the error is not `std.OK`, the current function returns the error.
+- If success value is intentionally discarded, use `_ = expr?;`.
+- Bare `expr?;` is rejected for value-returning expressions; make discarding
+  explicit.
+
 ## Async, Threads, Native, Unsafe
 
 Basic async:
@@ -403,6 +855,34 @@ async func main() -> Int {
     return 0;
 }
 ```
+
+Async expressions:
+
+```egret
+async func work(id: Int) -> Int {
+    return id * 2;
+}
+
+async func demo() -> Int {
+    let f1 = spawn work(1);
+    let f2 = spawn | | -> Int {
+        return 2;
+    }();
+
+    let a: Int = join f1;
+    let b: Int = await f2;
+    return a + b;
+}
+```
+
+Rules:
+
+- `async func` marks a function that may suspend.
+- `await expr` waits for a Future-style value.
+- `spawn expr` starts an async task/coroutine expression.
+- `join expr` joins a spawned task.
+- `await`, `spawn`, and `join` are async-context operations; use them inside
+  async functions unless an existing runtime API documents otherwise.
 
 Thread spawn:
 
@@ -438,6 +918,21 @@ func demo(ptr: Ptr) -> Int {
     return unsafe.load64(ptr);
 }
 ```
+
+Native and unsafe syntax surface:
+
+```egret
+extern func native_len(s: CString) -> Int;
+
+func ptr_demo(p: Ptr) -> Int {
+    let addr: Ptr = &p;
+    _ = addr;
+    return 0;
+}
+```
+
+Use native and pointer syntax only behind small APIs. Builds using `unsafe`
+module APIs require `--unsafe`.
 
 Conditional compilation:
 
