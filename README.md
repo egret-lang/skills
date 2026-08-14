@@ -1,4 +1,4 @@
-# Egret-lang Skill
+# Egret-lang Skills
 
 This directory contains the Egret-lang skill for AI Coding Agents. Its purpose
 is to let an agent progressively load focused reference documents and then write
