@@ -18,7 +18,7 @@ This skill solves three practical problems:
 ## Directory Structure
 
 ```text
-tools/skills/egret-lang/
+skills/egret-lang/
 ├── README.md
 ├── SKILL.md
 └── references/
