@@ -27,8 +27,9 @@ Keep this file small. Load reference files only when the task needs them.
   when formatting, naming, module boundaries, API shape, comments, or repository
   consistency matters.
 - `references/language.md`: load for `.eg` syntax, types, `func`, `module`,
-  `use`, control flow, `loop`, classes, generics, Norms, `ErrCode`, async,
-  unsafe, extern, and conditional compilation.
+  `use`, control flow, `loop`, classes, `init`/`dispose`/`deinit`, inheritance,
+  generics, Norms, `ErrCode`, async, unsafe, extern, and conditional
+  compilation.
 - `references/build-and-projects.md`: load for `egret build`, `egret.toml`,
   package layout, targets, link flags, install scripts, Makefile targets, and
   toolchain build commands.

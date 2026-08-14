@@ -50,6 +50,11 @@ Declarations:
 - `enum Name { A, B = 2, internal C = -1 }`.
 - `class Name { ... }`.
 - `class Child : Base { ... }`.
+- Class fields: `var field: Type;`, `internal var field: Type = expr;`.
+- Class methods: `func method(self: Type, ...) -> Type { ... }`.
+- Constructor method: `func init(self: Type, ...) -> Void { ... }`.
+- Explicit resource cleanup method: `func dispose(self: Type) -> Void { ... }`.
+- Destructor/finalizer method: `func deinit(self: Type) -> Void { ... }`.
 - `norm Name<T> { ... }`.
 - `norm impl Name<Type> { ... }`.
 - `internal` may prefix supported top-level declarations, fields, methods, norm
@@ -95,6 +100,9 @@ Expressions:
 - Generic call type arguments: `fn<T>(arg)`.
 - Argument spreading: `fn(xs...)`.
 - Field/member access: `obj.field`.
+- General `obj[index]` indexing is not present in the current parser; use
+  collection APIs such as `.get(index)` / `.set(index, value)` unless a future
+  parser version adds subscript syntax.
 - Norm member access form: `Norm<T>.method` through parser-supported generic
   member syntax.
 - Casts: `expr => Type`, `expr =>? Type`.
@@ -104,10 +112,207 @@ Expressions:
 - Lambda `|params| -> Type { ... }`.
 - `match expr { pattern => expr, ... }`.
 - Field initializer expression: `Type { field: value, ... }`.
-- `super`, `super.method(...)`, `super.init(...)`, `super<Base>.method(...)`.
+- `self`, `super`, `super.method(...)`, `super.init(...)`,
+  `super<Base>.method(...)`.
 - Async expressions: `await expr`, `spawn expr`, `join expr`.
 - Lazy expressions: `lazy expr`, `force(expr)`.
 - Infinite/range stream sugar: `[start, step, ...]` and `[start ...]`.
+
+## Parser-backed Grammar Forms
+
+This section mirrors the current `compiler/frontend/parser.y` surface. Use it as
+the safest source when generating syntax.
+
+Program:
+
+```text
+program        = module? use* decl*
+module         = "module" path_qident ";"
+use            = "use" path_qident ";"
+               | "use" path_qident "as" ident ";"
+path_qident    = qident ("." qident_seg)*
+qident         = ident ("::" qident_seg)*
+```
+
+Declarations:
+
+```text
+decl           = const_decl
+               | type_alias_decl
+               | enum_decl
+               | func_decl
+               | class_decl
+               | norm_decl
+               | norm_impl_decl
+
+const_decl     = internal? "const" ident ":" type "=" expr ";"
+type_alias     = internal? "type" ident "=" type ";"
+enum_decl      = internal? "enum" ident "{" enum_variant* "}"
+enum_variant   = internal? ident
+               | internal? ident "=" int_literal
+               | internal? ident "=" "-" int_literal
+```
+
+Function declarations:
+
+```text
+func_decl      = internal? async? "func" ident tparams? "(" params ")" "->" return_type block
+               | internal? async? "func" ident tparams? "(" params ")" block
+               | internal? "extern" async? "func" ident tparams? "(" params ")" "->" return_type ";"
+               | internal? "builtin" async? "func" ident tparams? "(" params ")" "->" return_type ";"
+
+params         = empty | param ("," param)*
+param          = ident ":" type
+               | ident ":" type "=" expr
+               | ident ":" "..." type
+               | ident ":" "..." type "=" expr
+return_type    = type | type "," type
+```
+
+Class declarations:
+
+```text
+class_decl     = internal? "class" name tparams? "{" field* method* "}"
+               | internal? "class" name tparams? ":" base "{" field* method* "}"
+               | internal? "class" name "<" value_arg ("," generic_arg)* ">" "{" field* method* "}"
+               | internal? "class" name "<" value_arg ("," generic_arg)* ">" ":" base "{" field* method* "}"
+
+field          = internal? "var" ident ":" type ";"
+               | internal? "var" ident ":" type "=" expr ";"
+method         = internal? async? "func" ident tparams? "(" params ")" "->" return_type block
+               | internal? async? "func" ident tparams? "(" params ")" block
+```
+
+Lifecycle method names are method names recognized by semantics:
+
+```text
+init           = constructor method, called by new Class(...)
+dispose        = explicit cleanup method, called by dispose expr;
+deinit         = destructor/finalizer hook, called by runtime lifetime handling
+```
+
+Norm declarations:
+
+```text
+norm_decl      = internal? "norm" ident tparams? "{" norm_sig* "}"
+norm_sig       = internal? async? "func" ident "(" params ")" "->" return_type ";"
+norm_impl      = internal? "norm" "impl" path_qident "<" type_list ">" "{" norm_impl_method* "}"
+norm_impl_method
+               = internal? async? "func" ident "(" params ")" "->" return_type block
+```
+
+Type grammar:
+
+```text
+type           = "immut" type
+               | type "?"
+               | builtin_type
+               | "Lazy" "(" type ")"
+               | "Future" "(" type ")"
+               | "Future" "(" type "," type ")"
+               | path_qident
+               | path_qident "<" generic_arg_list ">"
+               | "(" type_list? ")" "->" type
+
+generic_arg    = type
+               | path_qident
+               | int_literal
+               | "-" int_literal
+               | float_literal
+               | "-" float_literal
+               | string_literal
+               | true
+               | false
+```
+
+Statements:
+
+```text
+stmt           = block
+               | let_stmt
+               | assign_stmt
+               | if_stmt
+               | loop_stmt
+               | break ";"
+               | skip ";"
+               | return ";"
+               | return expr ";"
+               | return expr "," expr ";"
+               | defer expr ";"
+               | dispose expr ";"
+               | match_stmt
+               | expr ";"
+
+let_stmt       = ("let" | "var") ident ":" type "=" expr ";"
+               | ("let" | "var") ident ":" type ";"
+               | ("let" | "var") ident "=" expr ";"
+               | ("let" | "var") ident ";"
+               | ("let" | "var") ident ":" type "," ident ":" type "=" expr ";"
+               | "let" ident "," ident "=" expr ";"
+
+assign_stmt    = lvalue "=" expr ";"
+               | ident "," ident "=" expr ";"
+               | lvalue "+=" expr ";"
+               | lvalue "-=" expr ";"
+
+if_stmt        = "if" expr block ("else" block | "else" if_stmt)?
+loop_stmt      = "loop" expr block
+               | "loop" "(" for_init? ";" expr? ";" for_step? ")" block
+match_stmt     = "match" expr "{" match_pattern "=>" stmt ","? ... "}"
+lvalue         = ident | postfix "." ident
+```
+
+Expression grammar:
+
+```text
+expr           = ternary/logical/binary/unary/postfix/primary
+unary          = "-" unary
+               | "!" unary
+               | "~" unary
+               | "&" unary
+               | "lazy" unary
+               | "await" unary
+               | "spawn" unary
+               | "join" unary
+
+postfix        = postfix "(" args ")"
+               | postfix "<" generic_arg_list ">" "(" args ")"
+               | postfix "." ident
+               | postfix "=>" type
+               | postfix "=>?" type
+               | postfix "is" type
+               | postfix "?"
+               | primary
+
+primary        = int | float | string | cstring | true | false | nil
+               | qident
+               | "(" expr ")"
+               | "super"
+               | "super" "<" path_qident ">"
+               | "force" "(" expr ")"
+               | lambda
+               | new_expr
+               | match_expr
+               | field_init_expr
+               | range_expr
+
+lambda         = "|" params "|" "->" type block
+new_expr       = "new" path_qident type_args? "(" args ")"
+match_expr     = "match" expr "{" match_pattern "=>" expr ","? ... "}"
+field_init     = qident "{" ident ":" expr ("," ident ":" expr)* ","? "}"
+range_expr     = "[" expr ("," expr)? ","? "..." "]"
+args           = empty | expr | expr "..." | args "," expr | args "," expr "..."
+```
+
+Current parser-backed caveats:
+
+- General subscript/index syntax such as `xs[i]` is not in current `parser.y`.
+  Use collection methods (`xs.get(i)`, `xs.set(i, value)`) or module APIs.
+- `init`, `dispose`, and `deinit` are parsed as ordinary method names; their
+  special behavior is enforced by semantic/codegen/runtime phases.
+- `deinit` is a destructor/finalizer hook, not a direct-call cleanup API.
+- `dispose expr;` is a statement form; `expr.dispose()` is just a normal method
+  call and does not automatically insert the dispose safepoint.
 
 ## File Shape
 
@@ -451,7 +656,8 @@ target.field -= 1;
 
 Stable precedence from high to low:
 
-1. Postfix calls, field access, indexing.
+1. Postfix calls and field access. General subscript indexing is not currently
+   parser-backed.
 2. Unary `!`, unary `-`, unary `~`, address-of `&`, `lazy`, `await`, `spawn`,
    `join`.
 3. `*`, `/`, `%`.
@@ -524,6 +730,51 @@ func main() -> Int {
     return 0;
 }
 ```
+
+Class body syntax:
+
+```egret
+class Resource {
+    internal var handle: Int;
+    var name: String = "resource";
+
+    func init(self: Resource, handle: Int, name: String = "resource") -> Void {
+        self.handle = handle;
+        self.name = name;
+    }
+
+    func valid(self: Resource) -> Bool {
+        return self.handle >= 0;
+    }
+
+    func dispose(self: Resource) -> Void {
+        if self.handle >= 0 {
+            close_handle(self.handle);
+            self.handle = -1;
+        }
+    }
+
+    func deinit(self: Resource) -> Void {
+        self.dispose();
+    }
+}
+```
+
+Rules:
+
+- Fields are declared with `var name: Type;` or `var name: Type = expr;`.
+- Fields can be prefixed with `internal`.
+- Methods live inside the class body and use an explicit receiver as the first
+  parameter, normally `self: ClassName`.
+- `init` is the constructor method called by `new ClassName(...)`.
+- `dispose` is an ordinary method by name, but the statement `dispose obj;`
+  lowers to `obj.dispose()` plus a runtime dispose safepoint.
+- `deinit` is the class destructor/finalizer hook. Egret-lang does not use a
+  C++-style `~Class()` destructor syntax.
+- Do not call `obj.deinit()` directly from normal code. Put explicit timely
+  cleanup in `dispose`, and let `deinit` delegate to it when needed.
+- Resource-owning classes should make `dispose` idempotent because both normal
+  paths and cleanup paths may call it.
 
 Inheritance:
 
@@ -606,16 +857,60 @@ func origin() -> Point {
 Lifecycle:
 
 ```egret
-class Guard {
-    var id: Int;
+class NativeBuffer {
+    internal var handle: Int;
 
-    func init(self: Guard, id: Int) -> Void {
-        self.id = id;
+    func init(self: NativeBuffer, size: Int) -> Void {
+        self.handle = native_alloc(size);
     }
 
-    func deinit(self: Guard) -> Void {
-        print("deinit");
+    func dispose(self: NativeBuffer) -> Void {
+        if self.handle != 0 {
+            native_free(self.handle);
+            self.handle = 0;
+        }
     }
+
+    func deinit(self: NativeBuffer) -> Void {
+        self.dispose();
+    }
+}
+```
+
+Lifecycle vocabulary:
+
+- `init`: constructor. It establishes object invariants.
+- `dispose`: explicit, user-triggered cleanup for resources that should be
+  released promptly.
+- `deinit`: destructor/finalizer hook called by object lifetime management.
+- `defer`: statement-level cleanup scheduling for the current function/scope.
+- `dispose expr;`: statement form for explicit disposal plus safepoint.
+
+Resource ownership pattern:
+
+```egret
+class Socket {
+    internal var fd: Int;
+
+    func init(self: Socket, fd: Int) -> Void {
+        self.fd = fd;
+    }
+
+    func dispose(self: Socket) -> Void {
+        if self.fd >= 0 {
+            net.tcp.close(self.fd);
+            self.fd = -1;
+        }
+    }
+
+    func deinit(self: Socket) -> Void {
+        self.dispose();
+    }
+}
+
+func serve_one(sock: Socket) -> ErrCode {
+    defer dispose sock;
+    return std.OK;
 }
 ```
 

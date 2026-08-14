@@ -139,6 +139,13 @@ func read_config(path_text: String) -> String, ErrCode {
 - Use `class` for state plus behavior.
 - Use plain functions for pure computation or stateless helpers.
 - `init` should leave the object usable.
+- `deinit` is the destructor/finalizer hook. Use it for last-chance cleanup, not
+  as the normal explicit cleanup API.
+- Resource-owning classes should usually provide `dispose(self: Type) -> Void`
+  and have `deinit` call `self.dispose()`.
+- Do not call `obj.deinit()` directly in normal code.
+- Use the statement form `dispose obj;` when intentionally disposing a resource
+  object, because it also gives the runtime a dispose safepoint.
 - Avoid half-initialized objects that require a second setup call.
 - Keep inheritance shallow.
 - Prefer composition over inheritance for code reuse.
